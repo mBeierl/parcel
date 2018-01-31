@@ -1,5 +1,4 @@
 const CSSAsset = require('./CSSAsset');
-const config = require('../utils/config');
 const localRequire = require('../utils/localRequire');
 const Resolver = require('../Resolver');
 
@@ -8,14 +7,14 @@ const URL_RE = /^(?:url\s*\(\s*)?['"]?(?:[#/]|(?:https?:)?\/\/)/i;
 class StylusAsset extends CSSAsset {
   async parse(code) {
     // stylus should be installed locally in the module that's being required
-    let stylus = localRequire('stylus', this.name);
+    let stylus = await localRequire('stylus', this.name);
     let opts =
       this.package.stylus ||
-      (await config.load(this.name, ['.stylusrc', '.stylusrc.js']));
+      (await this.getConfig(['.stylusrc', '.stylusrc.js']));
     let style = stylus(code, opts);
     style.set('filename', this.name);
     style.set('include css', true);
-    style.set('Evaluator', createEvaluator(this));
+    style.set('Evaluator', await createEvaluator(this));
 
     // Setup a handler for the URL function so we add dependencies for linked assets.
     style.define('url', node => {
@@ -38,9 +37,12 @@ class StylusAsset extends CSSAsset {
   }
 }
 
-function createEvaluator(asset) {
-  const Evaluator = localRequire('stylus/lib/visitor/evaluator', asset.name);
-  const utils = localRequire('stylus/lib/utils', asset.name);
+async function createEvaluator(asset) {
+  const Evaluator = await localRequire(
+    'stylus/lib/visitor/evaluator',
+    asset.name
+  );
+  const utils = await localRequire('stylus/lib/utils', asset.name);
   const resolver = new Resolver(asset.options);
 
   // This is a custom stylus evaluator that extends stylus with support for the node

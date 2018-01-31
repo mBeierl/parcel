@@ -1,8 +1,11 @@
+const URL = require('url');
 const path = require('path');
 const fs = require('./utils/fs');
 const objectHash = require('./utils/objectHash');
 const md5 = require('./utils/md5');
 const isURL = require('./utils/is-url');
+const sanitizeFilename = require('sanitize-filename');
+const config = require('./utils/config');
 
 let ASSET_ID = 1;
 
@@ -17,6 +20,7 @@ class Asset {
     this.id = ASSET_ID++;
     this.name = name;
     this.basename = path.basename(this.name);
+    this.relativeName = path.relative(options.rootDir, this.name);
     this.package = pkg || {};
     this.options = options;
     this.encoding = 'utf8';
@@ -32,6 +36,11 @@ class Asset {
     this.depAssets = new Map();
     this.parentBundle = null;
     this.bundles = new Set();
+    this.cacheData = {};
+  }
+
+  shouldInvalidate() {
+    return false;
   }
 
   async loadIfNeeded() {
@@ -50,9 +59,9 @@ class Asset {
   async getDependencies() {
     await this.loadIfNeeded();
 
-    if (this.mightHaveDependencies()) {
+    if (this.contents && this.mightHaveDependencies()) {
       await this.parseIfNeeded();
-      this.collectDependencies();
+      await this.collectDependencies();
     }
   }
 
@@ -70,16 +79,31 @@ class Asset {
       from = this.name;
     }
 
-    let resolved = path
-      .resolve(path.dirname(from), url)
-      .replace(/[\?#].*$/, '');
+    const parsed = URL.parse(url);
+    const resolved = path.resolve(path.dirname(from), parsed.pathname);
     this.addDependency(
       './' + path.relative(path.dirname(this.name), resolved),
       Object.assign({dynamic: true}, opts)
     );
-    return this.options.parser
+
+    parsed.pathname = this.options.parser
       .getAsset(resolved, this.package, this.options)
       .generateBundleName();
+
+    return URL.format(parsed);
+  }
+
+  async getConfig(filenames) {
+    // Resolve the config file
+    let conf = await config.resolve(this.name, filenames);
+    if (conf) {
+      // Add as a dependency so it is added to the watcher and invalidates
+      // this asset when the config changes.
+      this.addDependency(conf, {includedInParent: true});
+      return await config.load(this.name, filenames);
+    }
+
+    return null;
   }
 
   mightHaveDependencies() {
@@ -98,13 +122,15 @@ class Asset {
     // do nothing by default
   }
 
-  async pretransform() {}
+  async pretransform() {
+    // do nothing by default
+  }
 
   async transform() {
     // do nothing by default
   }
 
-  generate() {
+  async generate() {
     return {
       [this.type]: this.contents
     };
@@ -116,7 +142,7 @@ class Asset {
       await this.pretransform();
       await this.getDependencies();
       await this.transform();
-      this.generated = this.generate();
+      this.generated = await this.generate();
       this.hash = this.generateHash();
     }
 
@@ -143,7 +169,7 @@ class Asset {
     this.parentDeps.clear();
   }
 
-  generateBundleName(isMainAsset) {
+  generateBundleName() {
     // Resolve the main file of the package.json
     let main =
       this.package && this.package.main
@@ -151,13 +177,16 @@ class Asset {
         : null;
     let ext = '.' + this.type;
 
-    // If this asset is main file of the package, use the package name
+    // If this asset is main file of the package, use the sanitized package name
     if (this.name === main) {
-      return this.package.name + ext;
+      const packageName = sanitizeFilename(this.package.name, {
+        replacement: '-'
+      });
+      return packageName + ext;
     }
 
     // If this is the entry point of the root bundle, use the original filename
-    if (isMainAsset) {
+    if (this.name === this.options.mainFile) {
       return path.basename(this.name, path.extname(this.name)) + ext;
     }
 

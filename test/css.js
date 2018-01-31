@@ -1,6 +1,9 @@
 const assert = require('assert');
 const fs = require('fs');
 const {bundle, run, assertBundleTree} = require('./utils');
+const promisify = require('../src/utils/promisify');
+const ncp = promisify(require('ncp'));
+const rimraf = require('rimraf');
 
 describe('css', function() {
   it('should produce two bundles when importing a CSS file', async function() {
@@ -10,6 +13,9 @@ describe('css', function() {
       name: 'index.js',
       assets: ['index.js', 'index.css', 'local.js', 'local.css'],
       childBundles: [
+        {
+          name: 'index.map'
+        },
         {
           name: 'index.css',
           assets: ['index.css', 'local.css'],
@@ -28,12 +34,22 @@ describe('css', function() {
 
     assertBundleTree(b, {
       name: 'index.js',
-      assets: ['index.js', 'index.css', 'bundle-loader.js', 'bundle-url.js'],
+      assets: [
+        'index.js',
+        'index.css',
+        'bundle-loader.js',
+        'bundle-url.js',
+        'js-loader.js',
+        'css-loader.js'
+      ],
       childBundles: [
         {
           name: 'index.css',
           assets: ['index.css'],
           childBundles: []
+        },
+        {
+          type: 'map'
         },
         {
           type: 'js',
@@ -43,6 +59,9 @@ describe('css', function() {
               type: 'css',
               assets: ['local.css'],
               childBundles: []
+            },
+            {
+              type: 'map'
             }
           ]
         }
@@ -65,6 +84,10 @@ describe('css', function() {
           name: 'index.css',
           assets: ['index.css', 'other.css', 'local.css'],
           childBundles: []
+        },
+        {
+          name: 'index.map',
+          type: 'map'
         }
       ]
     });
@@ -91,6 +114,9 @@ describe('css', function() {
           name: 'index.css',
           assets: ['index.css'],
           childBundles: []
+        },
+        {
+          type: 'map'
         },
         {
           type: 'woff2',
@@ -131,6 +157,9 @@ describe('css', function() {
           name: 'index.css',
           assets: ['index.css'],
           childBundles: []
+        },
+        {
+          type: 'map'
         }
       ]
     });
@@ -160,5 +189,46 @@ describe('css', function() {
     assert(css.includes('.local'));
     assert(css.includes('.index'));
     assert(!css.includes('\n'));
+  });
+
+  it('should automatically install postcss plugins with npm if needed', async function() {
+    rimraf.sync(__dirname + '/input');
+    await ncp(__dirname + '/integration/autoinstall/npm', __dirname + '/input');
+    await bundle(__dirname + '/input/index.css');
+
+    // cssnext was installed
+    let package = require('./input/package.json');
+    assert(package.devDependencies['postcss-cssnext']);
+
+    // peer dependency caniuse-lite was installed
+    assert(package.devDependencies['caniuse-lite']);
+
+    // cssnext is applied
+    let css = fs.readFileSync(__dirname + '/dist/index.css', 'utf8');
+    assert(css.includes('rgba'));
+  });
+
+  it('should automatically install postcss plugins with yarn if needed', async function() {
+    rimraf.sync(__dirname + '/input');
+    await ncp(
+      __dirname + '/integration/autoinstall/yarn',
+      __dirname + '/input'
+    );
+    await bundle(__dirname + '/input/index.css');
+
+    // cssnext was installed
+    let package = require('./input/package.json');
+    assert(package.devDependencies['postcss-cssnext']);
+
+    // peer dependency caniuse-lite was installed
+    assert(package.devDependencies['caniuse-lite']);
+
+    // appveyor is not currently writing to the yarn.lock file and will require further investigation
+    // let lockfile = fs.readFileSync(__dirname + '/input/yarn.lock', 'utf8');
+    // assert(lockfile.includes('postcss-cssnext'));
+
+    // cssnext is applied
+    let css = fs.readFileSync(__dirname + '/dist/index.css', 'utf8');
+    assert(css.includes('rgba'));
   });
 });

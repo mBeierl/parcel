@@ -7,7 +7,7 @@ describe('typescript', function() {
     let b = await bundle(__dirname + '/integration/typescript/index.ts');
 
     assert.equal(b.assets.size, 2);
-    assert.equal(b.childBundles.size, 0);
+    assert.equal(b.childBundles.size, 1);
 
     let output = run(b);
     assert.equal(typeof output.count, 'function');
@@ -20,7 +20,7 @@ describe('typescript', function() {
     );
 
     assert.equal(b.assets.size, 2);
-    assert.equal(b.childBundles.size, 0);
+    assert.equal(b.childBundles.size, 1);
 
     let output = run(b);
     assert.equal(typeof output.count, 'function');
@@ -31,7 +31,7 @@ describe('typescript', function() {
     let b = await bundle(__dirname + '/integration/typescript-json/index.ts');
 
     assert.equal(b.assets.size, 2);
-    assert.equal(b.childBundles.size, 0);
+    assert.equal(b.childBundles.size, 1);
 
     let output = run(b);
     assert.equal(typeof output.count, 'function');
@@ -42,7 +42,7 @@ describe('typescript', function() {
     let b = await bundle(__dirname + '/integration/typescript-env/index.ts');
 
     assert.equal(b.assets.size, 1);
-    assert.equal(b.childBundles.size, 0);
+    assert.equal(b.childBundles.size, 1);
 
     let output = run(b);
     assert.equal(typeof output.env, 'function');
@@ -57,6 +57,9 @@ describe('typescript', function() {
       assets: ['index.ts', 'test.txt'],
       childBundles: [
         {
+          type: 'map'
+        },
+        {
           type: 'txt',
           assets: ['test.txt'],
           childBundles: []
@@ -66,8 +69,8 @@ describe('typescript', function() {
 
     let output = run(b);
     assert.equal(typeof output.getRaw, 'function');
-    assert(/^\/[0-9a-f]+\.txt$/.test(output.getRaw()));
-    assert(fs.existsSync(__dirname + '/dist/' + output.getRaw()));
+    assert(/^\/dist\/[0-9a-f]+\.txt$/.test(output.getRaw()));
+    assert(fs.existsSync(__dirname + output.getRaw()));
   });
 
   it('should minify in production mode', async function() {

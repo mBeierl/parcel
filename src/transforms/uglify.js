@@ -1,30 +1,33 @@
 const {minify} = require('uglify-es');
+const logger = require('../Logger');
 
 module.exports = async function(asset) {
   await asset.parseIfNeeded();
 
   // Convert AST into JS
-  let code = asset.generate().js;
+  let code = (await asset.generate()).js;
 
+  let customConfig = await asset.getConfig(['.uglifyrc']);
   let options = {
     warnings: true,
     mangle: {
       toplevel: true
-    },
-    compress: {
-      drop_console: true
     }
   };
 
-  let result = minify(code, options);
+  if (customConfig) {
+    options = Object.assign(options, customConfig);
+  }
 
-  if (result.error) throw result.error;
+  let result = minify(code, options);
+  if (result.error) {
+    throw result.error;
+  }
 
   // Log all warnings
   if (result.warnings) {
     result.warnings.forEach(warning => {
-      // TODO: warn this using the logger
-      console.log(warning);
+      logger.warn('[uglify] ' + warning);
     });
   }
 
