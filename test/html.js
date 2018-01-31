@@ -16,13 +16,31 @@ describe('html', function() {
           childBundles: []
         },
         {
+          type: 'js',
+          assets: ['index.js'],
+          childBundles: [
+            {
+              type: 'map'
+            }
+          ]
+        },
+        {
           type: 'html',
           assets: ['other.html'],
           childBundles: [
             {
+              type: 'css',
+              assets: ['index.css'],
+              childBundles: []
+            },
+            {
               type: 'js',
               assets: ['index.js'],
-              childBundles: []
+              childBundles: [
+                {
+                  type: 'map'
+                }
+              ]
             }
           ]
         }
@@ -32,10 +50,27 @@ describe('html', function() {
     let files = fs.readdirSync(__dirname + '/dist');
     let html = fs.readFileSync(__dirname + '/dist/index.html');
     for (let file of files) {
-      if (file !== 'index.html') {
+      let ext = file.match(/\.([0-9a-z]+)(?:[?#]|$)/i)[0];
+      if (file !== 'index.html' && ext !== '.map') {
         assert(html.includes(file));
       }
     }
+  });
+
+  it('should find href attr when not first', async function() {
+    let b = await bundle(__dirname + '/integration/html-attr-order/index.html');
+
+    assertBundleTree(b, {
+      name: 'index.html',
+      assets: ['index.html'],
+      childBundles: [
+        {
+          type: 'html',
+          assets: ['other.html'],
+          childBundles: []
+        }
+      ]
+    });
   });
 
   it('should support transforming HTML with posthtml', async function() {
@@ -49,6 +84,26 @@ describe('html', function() {
 
     let html = fs.readFileSync(__dirname + '/dist/index.html');
     assert(html.includes('<h1>Other page</h1>'));
+  });
+
+  it('should find assets inside posthtml', async function() {
+    let b = await bundle(__dirname + '/integration/posthtml-assets/index.html');
+
+    assertBundleTree(b, {
+      name: 'index.html',
+      assets: ['index.html'],
+      childBundles: [
+        {
+          type: 'js',
+          assets: ['index.js'],
+          childBundles: [
+            {
+              type: 'map'
+            }
+          ]
+        }
+      ]
+    });
   });
 
   it('should insert sibling CSS bundles for JS files in the HEAD', async function() {
@@ -66,6 +121,9 @@ describe('html', function() {
               type: 'css',
               assets: ['index.css'],
               childBundles: []
+            },
+            {
+              type: 'map'
             }
           ]
         }
@@ -95,6 +153,9 @@ describe('html', function() {
               type: 'css',
               assets: ['index.css'],
               childBundles: []
+            },
+            {
+              type: 'map'
             }
           ]
         }
@@ -109,14 +170,76 @@ describe('html', function() {
     );
   });
 
+  it('should insert sibling JS bundles for CSS files in the HEAD', async function() {
+    let b = await bundle(__dirname + '/integration/html-css-js/index.html', {
+      hmr: true
+    });
+
+    assertBundleTree(b, {
+      name: 'index.html',
+      assets: ['index.html'],
+      childBundles: [
+        {
+          type: 'css',
+          assets: ['index.css'],
+          childBundles: [
+            {
+              type: 'map'
+            },
+            {
+              type: 'js',
+              assets: [
+                'index.css',
+                'bundle-url.js',
+                'css-loader.js',
+                'hmr-runtime.js'
+              ],
+              childBundles: []
+            }
+          ]
+        }
+      ]
+    });
+
+    let html = fs.readFileSync(__dirname + '/dist/index.html');
+    assert(/<script src="[/\\]{1}dist[/\\]{1}[a-f0-9]+\.js">/.test(html));
+  });
+
   it('should minify HTML in production mode', async function() {
     await bundle(__dirname + '/integration/htmlnano/index.html', {
       production: true
     });
 
-    let css = fs.readFileSync(__dirname + '/dist/index.html', 'utf8');
-    assert(css.includes('Other page'));
-    assert(!css.includes('\n'));
+    let html = fs.readFileSync(__dirname + '/dist/index.html', 'utf8');
+    assert(html.includes('Other page'));
+    assert(!html.includes('\n'));
+  });
+
+  it('should read .htmlnanorc and minify HTML in production mode', async function() {
+    await bundle(__dirname + '/integration/htmlnano-config/index.html', {
+      production: true
+    });
+
+    let html = fs.readFileSync(__dirname + '/dist/index.html', 'utf8');
+
+    // mergeStyles
+    assert(
+      html.includes(
+        '<style>h1{color:red}div{font-size:20px}</style><style media="print">div{color:blue}</style>'
+      )
+    );
+
+    // minifyJson
+    assert(
+      html.includes('<script type="application/json">{"user":"me"}</script>')
+    );
+
+    // minifySvg is false
+    assert(
+      html.includes(
+        '<svg version="1.1" baseprofile="full" width="300" height="200" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="red"></rect><circle cx="150" cy="100" r="80" fill="green"></circle><text x="150" y="125" font-size="60" text-anchor="middle" fill="white">SVG</text></svg>'
+      )
+    );
   });
 
   it('should not prepend the public path to assets with remote URLs', async function() {
@@ -133,6 +256,24 @@ describe('html', function() {
 
     let html = fs.readFileSync(__dirname + '/dist/index.html', 'utf8');
     assert(html.includes('<a href="#hash_link">'));
+  });
+
+  it('Should detect virtual paths', async function() {
+    let b = await bundle(
+      __dirname + '/integration/html-virtualpath/index.html'
+    );
+
+    assertBundleTree(b, {
+      name: 'index.html',
+      assets: ['index.html'],
+      childBundles: [
+        {
+          type: 'html',
+          assets: ['other.html'],
+          childBundles: []
+        }
+      ]
+    });
   });
 
   it('should not update root/main file in the bundles', async function() {
@@ -155,5 +296,103 @@ describe('html', function() {
 
     let html = fs.readFileSync(__dirname + '/dist/index.html', 'utf8');
     assert(/<i>hello<\/i> <i>world<\/i>/.test(html));
+  });
+
+  it('should support child bundles of different types', async function() {
+    let b = await bundle(
+      __dirname + '/integration/child-bundle-different-types/index.html'
+    );
+
+    assertBundleTree(b, {
+      name: 'index.html',
+      assets: ['index.html'],
+      childBundles: [
+        {
+          type: 'js',
+          assets: ['main.js', 'util.js', 'other.js'],
+          childBundles: [
+            {
+              type: 'map'
+            }
+          ]
+        },
+        {
+          type: 'html',
+          assets: ['other.html'],
+          childBundles: [
+            {
+              type: 'js',
+              assets: ['index.js', 'util.js', 'other.js'],
+              childBundles: [
+                {
+                  type: 'map'
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    });
+  });
+
+  it('should support circular dependencies', async function() {
+    let b = await bundle(__dirname + '/integration/circular/index.html');
+
+    assertBundleTree(b, {
+      name: 'index.html',
+      assets: ['index.html'],
+      childBundles: [
+        {
+          type: 'html',
+          assets: ['about.html'],
+          childBundles: [
+            {
+              type: 'js',
+              assets: ['about.js', 'index.js'],
+              childBundles: [
+                {
+                  type: 'map'
+                }
+              ]
+            },
+            {
+              type: 'html',
+              assets: ['test.html'],
+              childBundles: []
+            }
+          ]
+        },
+        {
+          type: 'js',
+          assets: ['about.js', 'index.js'],
+          childBundles: [
+            {
+              type: 'map'
+            }
+          ]
+        }
+      ]
+    });
+  });
+
+  it('should support bundling HTM', async function() {
+    let b = await bundle(__dirname + '/integration/htm-extension/index.htm');
+
+    assertBundleTree(b, {
+      name: 'index.html',
+      assets: ['index.htm'],
+      type: 'html',
+      childBundles: [
+        {
+          type: 'js',
+          assets: ['index.js'],
+          childBundles: [
+            {
+              type: 'map'
+            }
+          ]
+        }
+      ]
+    });
   });
 });

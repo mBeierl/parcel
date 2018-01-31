@@ -1,6 +1,5 @@
 const loadPlugins = require('../utils/loadPlugins');
 const posthtml = require('posthtml');
-const Config = require('../utils/config');
 const htmlnano = require('htmlnano');
 
 module.exports = async function(asset) {
@@ -19,7 +18,7 @@ module.exports = async function(asset) {
 async function getConfig(asset) {
   let config =
     asset.package.posthtml ||
-    (await Config.load(asset.name, [
+    (await asset.getConfig([
       '.posthtmlrc',
       '.posthtmlrc.js',
       'posthtml.config.js'
@@ -32,10 +31,12 @@ async function getConfig(asset) {
   config.plugins = await loadPlugins(config.plugins, asset.name);
 
   if (asset.options.minify) {
-    const htmlNanoOptions = {
-      collapseWhitespace: 'conservative'
-    };
-    config.plugins.push(htmlnano(htmlNanoOptions));
+    const htmlNanoConfig = asset.package.htmlnano ||
+      (await asset.getConfig(['.htmlnanorc', '.htmlnanorc.js'])) || {
+        collapseWhitespace: 'conservative'
+      };
+
+    config.plugins.push(htmlnano(htmlNanoConfig));
   }
 
   config.skipParse = true;

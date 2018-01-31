@@ -13,6 +13,16 @@ program
     'set the port to serve on. defaults to 1234',
     parseInt
   )
+  .option(
+    '-h, --hmr-port <port>',
+    'set the port to serve HMR websockets, defaults to random',
+    parseInt
+  )
+  .option(
+    '--hmr-hostname <hostname>',
+    'set the hostname of HMR websockets, defaults to location.hostname of current window'
+  )
+  .option('--https', 'serves files over HTTPS')
   .option('-o, --open', 'automatically open in default browser')
   .option(
     '-d, --out-dir <path>',
@@ -24,6 +34,7 @@ program
   )
   .option('--no-hmr', 'disable hot module replacement')
   .option('--no-cache', 'disable the filesystem cache')
+  .option('--no-source-maps', 'disable sourcemaps')
   .option('-V, --version', 'output the version number')
   .action(bundle);
 
@@ -40,6 +51,7 @@ program
   )
   .option('--no-hmr', 'disable hot module replacement')
   .option('--no-cache', 'disable the filesystem cache')
+  .option('--no-source-maps', 'disable sourcemaps')
   .action(bundle);
 
 program
@@ -96,9 +108,13 @@ async function bundle(main, command) {
   const bundler = new Bundler(main, command);
 
   if (command.name() === 'serve') {
-    const server = await bundler.serve(command.port || 1234);
+    const server = await bundler.serve(command.port || 1234, command.https);
     if (command.open) {
-      require('opn')(`http://localhost:${server.address().port}`);
+      require('opn')(
+        `${command.https ? 'https' : 'http'}://localhost:${
+          server.address().port
+        }`
+      );
     }
   } else {
     bundler.bundle();
